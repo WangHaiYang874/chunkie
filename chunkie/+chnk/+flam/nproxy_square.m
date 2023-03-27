@@ -52,6 +52,10 @@ function npxy = nproxy_square(kern,width,opts)
     targinfo.r = pr*width;
     targinfo.d = ptau;
     targinfo.d2 = zeros(2,npxy);
+    n = [-ptau(2,:);ptau(1,:)];
+    nnorm = sqrt(sum(n.*n,1));
+    nnorm = nnorm(:).';
+    targinfo.n = n./nnorm;
 
     mat = kern(srcinfo,targinfo);
 
