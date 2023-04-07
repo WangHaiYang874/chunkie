@@ -22,10 +22,12 @@ d = chnkr.d;
 n = chnkr.n;
 d2 = chnkr.d2;
 h = chnkr.h;
+n = chnkr.n;
 
 [dim,k,~] = size(r);
-rs = r(:,:,j); rt = r(:,:,i); ds = d(:,:,j); dt = d(:,:,i); ns = n(:,:,j);
-d2s = d2(:,:,j); d2t = d2(:,:,i); nt = n(:,:,i);
+rs = r(:,:,j); rt = r(:,:,i); ds = d(:,:,j); dt = d(:,:,i); nt = n(:,:,i);
+ns = n(:,:,j);
+d2s = d2(:,:,j); d2t = d2(:,:,i);
 rs = reshape(rs,dim,k*length(j)); rt = reshape(rt,dim,k*length(i));
 ds = reshape(ds,dim,k*length(j)); dt = reshape(dt,dim,k*length(i));
 ns = reshape(ns,dim,k*length(j)); nt = reshape(nt,dim,k*length(i));
@@ -39,7 +41,7 @@ dsnrms = sqrt(sum(ds.^2,1));
 %dsnrms = ds(1,:,:); % for complex contour, by SJ 09/30/21
 %taus = bsxfun(@rdivide,ds,dsnrms);
 
-%dtnrms = sqrt(sum(dt.^2,1));
+%dtnrms = sqrt(sum(abs(dt).^2,1));
 %taut = bsxfun(@rdivide,dt,dtnrms);
 
 ws = kron(hs(:),wts(:));

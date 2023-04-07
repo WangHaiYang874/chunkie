@@ -40,8 +40,8 @@ function npxy = nproxy_square(kern,width,opts)
   srcinfo.r = [-0.5;-0.5]*width + rand(2,nsrc)*width;
   
   srcinfo.d = randn(2,nsrc);
-  theta = randn(1,nsrc);
-  srcinfo.n = [cos(theta); sin(theta)];
+  srcinfo.n = randn(2,nsrc); srcinfo.n = ... 
+      (srcinfo.n)./(sum((srcinfo.n).^2,1));
   srcinfo.d2 = randn(2,nsrc);
 
   npxy = 16;
@@ -53,6 +53,8 @@ function npxy = nproxy_square(kern,width,opts)
     targinfo.r = pr*width;
     targinfo.d = ptau;
     targinfo.d2 = zeros(2,npxy);
+    targinfo.n = [-ptau(2,:);ptau(1,:)] ./ sqrt(sum(ptau.^2,1));
+
     mat = kern(srcinfo,targinfo);
     mat = permute(mat,[2,1,3]);
     nr = size(mat,1);

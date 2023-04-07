@@ -46,7 +46,7 @@ srcinfo = []; targinfo = [];
 srcinfo.r = chnkr.r(:,1); srcinfo.d = chnkr.d(:,1); 
 srcinfo.n = chnkr.n(:,1); srcinfo.d2 = chnkr.d2(:,1);
 targinfo.r = chnkr.r(:,2); targinfo.d = chnkr.d(:,2); 
-targinfo.n = chnkr.n(:,2); targinfo.d2 = chnkr.d2(:,2);
+targinfo.d2 = chnkr.d2(:,2); targinfo.n = chnkr.n(:,2);
 
 ftemp = kern(srcinfo,targinfo);
 opdims = size(ftemp);
@@ -57,12 +57,14 @@ end
 
 forcesmooth = true;
 forceadap = false;
+forcepquad = false;
 flam = true;
 fac = 1.0;
 quadgkparams = {};
 eps = 1e-12;
 if isfield(opts,'forcesmooth'); forcesmooth = opts.forcesmooth; end
 if isfield(opts,'forceadap'); forceadap = opts.forceadap; end
+if isfield(opts,'forcepquad'); forcepquad = opts.forcepquad; end
 if isfield(opts,'flam'); flam = opts.flam; end
 if isfield(opts,'quadgkparams'); quadgkparams = opts.quadgkparams; end
 if isfield(opts,'fac'); fac = opts.fac; end
@@ -88,10 +90,24 @@ if forceadap
     return
 end
 
+
+if forcepquad
+    optsflag = []; optsflag.fac = fac;
+    flag = flagnear(chnkr,targs,optsflag);
+    fints = chunkerkerneval_smooth(chnkr,kern,opdims,dens,targs, ...
+        flag,opts);
+
+    fints = fints + chunkerkerneval_ho(chnkr,kern,opdims,dens, ...
+        targs,flag,optsadap);
+
+    return
+end
+
 % smooth for sufficiently far, adaptive otherwise
 
 optsflag = []; optsflag.fac = fac;
 flag = flagnear(chnkr,targs,optsflag);
+
 fints = chunkerkerneval_smooth(chnkr,kern,opdims,dens,targs, ...
     flag,opts);
 
@@ -101,6 +117,41 @@ fints = fints + chunkerkerneval_adap(chnkr,kern,opdims,dens, ...
 
 end
 
+function fints = chunkerkerneval_ho(chnkr,kern,opdims,dens, ...
+    targs,flag,opts)
+
+% target
+[~,nt] = size(targs);
+fints = zeros(opdims(1)*nt,1);
+k = size(chnkr.r,2);
+[t,w] = lege.exps(2*k);
+ct = lege.exps(k);
+bw = lege.barywts(k);
+r = chnkr.r;
+d = chnkr.d;
+n = chnkr.n;
+d2 = chnkr.d2;
+h = chnkr.h;
+
+% interpolation matrix
+intp = lege.matrin(k,t);          % interpolation from k to 2*k
+intp_ab = lege.matrin(k,[-1;1]);  % interpolation from k to end points
+targd = zeros(chnkr.dim,nt); targd2 = zeros(chnkr.dim,nt);
+targn = zeros(chnkr.dim,nt);
+for j=1:size(chnkr.r,3)
+    [ji] = find(flag(:,j));
+    if(~isempty(ji))
+        idxjmat = (j-1)*k+(1:k);
+
+
+        % Helsing-Ojala (interior/exterior?)
+        mat1 = chnk.pquadwts(r,d,n,d2,h,ct,bw,j,targs(:,ji), ...
+            targd(:,ji),targn(:,ji),targd2(:,ji),kern,opdims,t,w,opts,intp_ab,intp); % depends on kern, different mat1?
+
+        fints(ji) = fints(ji) + mat1*dens(idxjmat);
+    end
+end
+end
 
 
 function fints = chunkerkerneval_smooth(chnkr,kern,opdims,dens, ...
@@ -142,7 +193,8 @@ if ~flam
             dsdtdt = dsdtdt(:).*w(:)*chnkr.h(i);
             dsdtdt = repmat( (dsdtdt(:)).',opdims(2),1);
             densvals = densvals.*(dsdtdt(:));
-            srcinfo = []; srcinfo.r = chnkr.r(:,:,i); srcinfo.n = chnkr.n(:,:,i);
+            srcinfo = []; srcinfo.r = chnkr.r(:,:,i); 
+            srcinfo.n = chnkr.n(:,:,i);
             srcinfo.d = chnkr.d(:,:,i); srcinfo.d2 = chnkr.d2(:,:,i);
             kernmat = kern(srcinfo,targinfo);
             fints = fints + kernmat*densvals;
@@ -155,7 +207,8 @@ if ~flam
             dsdtdt = dsdtdt(:).*w(:)*chnkr.h(i);
             dsdtdt = repmat( (dsdtdt(:)).',opdims(2),1);
             densvals = densvals.*(dsdtdt(:));
-            srcinfo = []; srcinfo.r = chnkr.r(:,:,i); srcinfo.n = chnkr.n(:,:,i);
+            srcinfo = []; srcinfo.r = chnkr.r(:,:,i); 
+            srcinfo.n = chnkr.n(:,:,i);
             srcinfo.d = chnkr.d(:,:,i); srcinfo.d2 = chnkr.d2(:,:,i);
             kernmat = kern(srcinfo,targinfo);
 
@@ -185,6 +238,7 @@ else
 %     
 %     mm = nt*opdims(1); nn = chnkr.npt*opdims(2);
 %     v = 1e-300*ones(length(inew),1); sp = sparse(inew,jnew,v,mm,nn);
+
     wts = weights(chnkr);
     wts = repmat((wts(:)).',opdims(2),1); wts = wts(:);
     
@@ -198,6 +252,7 @@ else
     matfun = @(i,j) chnk.flam.kernbyindexr(i,j,targs,chnkr,wts,kern, ...
         opdims);
     
+
     width = max(abs(max(chnkr)-min(chnkr)))/3;
     tmax = max(targs(:,:),[],2); tmin = min(targs(:,:),[],2);
     wmax = max(abs(tmax-tmin));
@@ -207,7 +262,11 @@ else
 
     pxyfun = @(rc,rx,cx,slf,nbr,l,ctr) chnk.flam.proxyfunr(rc,rx,slf,nbr,l, ...
         ctr,chnkr,wts,kern,opdims,pr,ptau,pw,pin);
-    F = ifmm(matfun,targsflam,xflam1,200,1e-14,pxyfun);
+    
+
+    optsifmm=[]; optsifmm.Tmax=Inf;
+    F = ifmm(matfun,targsflam,xflam1,200,1e-14,pxyfun,optsifmm);
+ 
     fints = ifmm_mv(F,dens(:),matfun);
 
     % delete interactions in flag array (possibly unstable approach)
@@ -220,7 +279,8 @@ else
             dsdtdt = dsdtdt(:).*w(:)*chnkr.h(i);
             dsdtdt = repmat( (dsdtdt(:)).',opdims(2),1);
             densvals = densvals.*(dsdtdt(:));
-            srcinfo = []; srcinfo.r = chnkr.r(:,:,i); srcinfo.n = chnkr.n(:,:,i);
+            srcinfo = []; srcinfo.r = chnkr.r(:,:,i); 
+            srcinfo.n = chnkr.n(:,:,i);
             srcinfo.d = chnkr.d(:,:,i); srcinfo.d2 = chnkr.d2(:,:,i);
 
             delsmooth = find(flag(:,i)); 
@@ -250,82 +310,49 @@ if nargin < 7
     opts = [];
 end
 
-quadgkparams = {};
-if isfield(opts,'quadgkparams')
-    quadgkparams = opts.quadgkparams;
-end
-
 assert(numel(dens) == opdims(2)*k*nch,'dens not of appropriate size')
 dens = reshape(dens,opdims(2),k,nch);
 
-[~,~,u] = lege.exps(k);
 [~,nt] = size(targs);
 
 fints = zeros(opdims(1)*nt,1);
 
 % using adaptive quadrature
 
+[t,w] = lege.exps(2*k+1);
+ct = lege.exps(k);
+bw = lege.barywts(k);
+r = chnkr.r;
+d = chnkr.d;
+n = chnkr.n;
+d2 = chnkr.d2;
+h = chnkr.h;
+targd = zeros(chnkr.dim,nt); targd2 = zeros(chnkr.dim,nt);
+targn = zeros(chnkr.dim,nt);
 
-if isempty(flag)
-    [rc,dc,d2c] = exps(chnkr);
+if isempty(flag) % do all to all adaptive
     for i = 1:nch
-        rci = rc(:,:,i);
-        dci = dc(:,:,i);
-        d2ci = d2c(:,:,i);    
-        densvals = dens(:,:,i); densvals = densvals.';
-        densc = u*densvals; % each column is set of coefficients
-                        % for one dimension of density on chunk
         for j = 1:nt
+            fints1 = chnk.adapgausskerneval(r,d,n,d2,h,ct,bw,i,dens,targs(:,j), ...
+                    targd(:,j),targn(:,j),targd2(:,j),kern,opdims,t,w,opts);
+            
             indj = (j-1)*opdims(1);
-            for l = 1:opdims(1)
-                ind = indj+l;
-                temp = chnk.intchunk.kerncoefs(kern,opdims,l,...
-                    densc,rci,dci,d2ci,targs(:,j),quadgkparams);
-
-                fints(ind) = fints(ind) + temp*chnkr.h(i);
-            end
+            ind = indj + (1:opdims(1));
+            fints(ind) = fints(ind) + fints1;
         end
     end
-else
-%     [rc,dc,d2c] = exps(chnkr);
-    [t,w] = lege.exps(2*k+1);
-    ct = lege.exps(k);
-    bw = lege.barywts(k);
-    r = chnkr.r;
-    d = chnkr.d;
-    d2 = chnkr.d2;
-    h = chnkr.h;
-    targd = zeros(chnkr.dim,nt); targd2 = zeros(chnkr.dim,nt);
+else % do only those flagged
     for i = 1:nch
-%         rci = rc(:,:,i);
-%         dci = dc(:,:,i);
-%         d2ci = d2c(:,:,i);    
-%         densvals = dens(:,:,i); densvals = densvals.';
-%         densc = u*densvals; % each column is set of coefficients
-%                         % for one dimension of density on chunk
-                        
         [ji] = find(flag(:,i));
-        fints1 =  chnk.adapgausskerneval(r,d,d2,h,ct,bw,i,dens,targs(:,ji), ...
-                    targd(:,ji),targd2(:,ji),kern,opdims,t,w,opts);
+        fints1 =  chnk.adapgausskerneval(r,d,n,d2,h,ct,bw,i,dens,targs(:,ji), ...
+                    targd(:,ji),targn(:,ji),targd2(:,ji),kern,opdims,t,w,opts);
                 
         indji = (ji-1)*opdims(1);
-        fints(indji+(1:opdims(1))) = fints(indji+(1:opdims(1))) + fints1;
-        
-%        for jj = 1:length(ji)
-%            j = ji(jj);
-%            indj = (j-1)*opdims(1);
-%             for l = 1:opdims(1)
-%                 ind = indj+l;
-%                 temp = chnk.intchunk.kerncoefs(kern,opdims,l,...
-%                     densc,rci,dci,d2ci,targs(:,j),quadgkparams);
-% 
-%                 fints(ind) = fints(ind) + temp*chnkr.h(i);
-%             end
-%        end
+        ind = indji + (1:opdims(1));
+        fints(ind) = fints(ind) + fints1;        
 
     end
     
 end
 
 end
-

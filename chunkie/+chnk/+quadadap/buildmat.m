@@ -23,6 +23,7 @@ adj = chnkr.adj;
 d = chnkr.d;
 d2 = chnkr.d2;
 h = chnkr.h;
+n = chnkr.n;
 
 [t,wts,u] = lege.exps(k);
 bw = lege.barywts(k);
@@ -31,11 +32,6 @@ k2 = max(27,k+1);
 [t2,w2] = lege.exps(k2);
 
 if strcmpi(type,'log')
-
-    qavail = chnk.quadggq.logavail();
-    [~,i] = min(abs(qavail-k));
-    assert(qavail(i) == k,'order %d not found, consider using order %d chunks', ...
-        k,qavail(i));
     [~,~,xs0,wts0] = chnk.quadggq.getlogquad(k);
 else
     error('type not available')
@@ -43,17 +39,14 @@ end
 
 nquad0 = size(xs0,1);
 
-ainterps0kron = zeros(opdims(2)*nquad0,opdims(2)*k,k);
-ainterps0 = zeros(nquad0,k,k);
+auxquads = chnk.quadggq.setuplogquad(k,opdims);
 
-temp = eye(opdims(2));
+xs0 = auxquads.xs0;
+wts0 = auxquads.wts0;
 
-for i = 1:k
-    xs0j = xs0(:,i);
-    ainterp0_sm = lege.matrin(k,xs0j);
-    ainterps0(:,:,i) = ainterp0_sm;
-    ainterps0kron(:,:,i) = kron(ainterp0_sm,temp);
-end
+ainterps0 = auxquads.ainterps0;
+ainterps0kron = auxquads.ainterps0kron;
+
 
 % do smooth weight for all
 sysmat = chnk.quadnative.buildmat(chnkr,kern,opdims,1:nch,1:nch,wts);
@@ -73,7 +66,8 @@ for i = 1:nch
         rt = r(:,:,ibefore);
         dt = d(:,:,ibefore);
         d2t = d2(:,:,ibefore);
-        submat = chnk.adapgausswts(r,d,d2,h,t,bw,i,rt,dt,d2t, ...
+        nt = n(:,:,ibefore);
+        submat = chnk.adapgausswts(r,d,n,d2,h,t,bw,i,rt,dt,nt,d2t, ...
             kern,opdims,t2,w2);
 
         imat = 1 + (ibefore-1)*k*opdims(1);
@@ -84,8 +78,9 @@ for i = 1:nch
     if iafter > 0
         rt = r(:,:,iafter);
         dt = d(:,:,iafter);
+        nt = n(:,:,iafter);
         d2t = d2(:,:,iafter);
-        submat = chnk.adapgausswts(r,d,d2,h,t,bw,i,rt,dt,d2t, ...
+        submat = chnk.adapgausswts(r,d,n,d2,h,t,bw,i,rt,dt,nt,d2t, ...
             kern,opdims,t2,w2);
 
         imat = 1 + (iafter-1)*k*opdims(1);
@@ -96,8 +91,8 @@ for i = 1:nch
     
     % self
     
-    submat = chnk.quadggq.diagbuildmat(r,d,d2,h,i,kern,opdims,...
-        u,xs0,wts0,ainterps0kron,ainterps0);
+    submat = chnk.quadggq.diagbuildmat(r,d,n,d2,h,[],i,kern,opdims,...
+        xs0,wts0,ainterps0kron,ainterps0);
 
     imat = 1 + (i-1)*k*opdims(1);
     imatend = i*k*opdims(1);
@@ -156,8 +151,9 @@ if robust
         rt = r(:,targfix);
         dt = d(:,targfix);
         d2t = d2(:,targfix);
+        nt = n(:,targfix);
 
-        submat = chnk.adapgausswts(r,d,d2,h,t,bw,i,rt,dt,d2t, ...
+        submat = chnk.adapgausswts(r,d,n,d2,h,t,bw,i,rt,dt,nt,d2t, ...
                 kern,opdims,t2,w2);
             
         imats = bsxfun(@plus,(1:opdims(1)).',opdims(1)*(targfix(:)-1).');

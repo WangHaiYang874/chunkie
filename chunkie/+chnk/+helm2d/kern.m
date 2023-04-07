@@ -68,6 +68,15 @@ if strcmpi(type,'sprime')
   submat = (grad(:,:,1).*nx + grad(:,:,2).*ny);
 end
 
+if strcmpi(type,'sdtau')
+  targtan = targinfo.d;
+  [~,grad] = chnk.helm2d.green(zk,src,targ);
+  dx = repmat((targtan(1,:)).',1,ns);
+  dy = repmat((targtan(2,:)).',1,ns);
+  dn = sqrt(dx.*dx+dy.*dy);
+  submat = (grad(:,:,1).*dx./dn + grad(:,:,2).*dy)./dn;
+end
+
 if strcmpi(type,'s')
   submat = chnk.helm2d.green(zk,src,targ);
 end
@@ -99,6 +108,7 @@ if strcmpi(type,'all')
   % added by Shidong Jiang to avoid O(N^2) calculation of normals
   targnorm = targinfo.n;
   srcnorm = srcinfo.n;
+  cc = varargin{1};
   
   submat = zeros(2*nt,2*ns);
   % S
@@ -122,10 +132,10 @@ if strcmpi(type,'all')
   submatd  = -(grad(:,:,1).*nxsrc + grad(:,:,2).*nysrc);
   
   
-  submat(1:2:2*nt,1:2:2*ns) = submatd;
-  submat(1:2:2*nt,2:2:2*ns) = submats;
-  submat(2:2:2*nt,1:2:2*ns) = submatdp;
-  submat(2:2:2*nt,2:2:2*ns) = submatsp;
+  submat(1:2:2*nt,1:2:2*ns) = submatd*cc(1,1);
+  submat(1:2:2*nt,2:2:2*ns) = submats*cc(1,2);
+  submat(2:2:2*nt,1:2:2*ns) = submatdp*cc(2,1);
+  submat(2:2:2*nt,2:2:2*ns) = submatsp*cc(2,2);
 end
 
 if strcmpi(type,'eval')
@@ -307,4 +317,3 @@ if strcmpi(type,'trans1')
   submat(2:2:2*nt,1:2:2*ns) = -alpha2.*(submatdp2-submatdp1);
   submat(2:2:2*nt,2:2:2*ns) = -alpha2.*(1./c2.*submatsp2-1./c1.*submatsp1);
 end
-

@@ -1,4 +1,4 @@
-function trap = trapfunc(fcurve,cparams,pref)
+function trap = trapperfunc(fcurve,cparams,pref)
 %TRAPFUNC discretize a curve using uniform points in 
 % parameter space. 
 %
@@ -9,6 +9,11 @@ function trap = trapfunc(fcurve,cparams,pref)
 %   cparams.npt = number of points to use (100)
 %
 % See also TRAPPER
+
+
+if nargin < 2
+    cparams = [];
+end
 
 ta = 0.0; tb = 2*pi;
 npt = 100;
@@ -25,15 +30,13 @@ end
 
 dim = checkcurveparam(fcurve,ta);
 
-if nargin < 2
-    cparams = [];
-end
 if nargin < 3
     p = []; p.dim = dim;
     pref = trapperpref(p);
 else
     pref = trapperpref(pref);
 end
+
 
 assert(pref.dim == dim);
 
@@ -52,6 +55,7 @@ trap.r = rs;
 trap.d = ds;
 trap.d2 = d2s;
 trap.h = h;
+trap.n = normals(trap);
 
 end
 

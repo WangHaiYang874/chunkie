@@ -1,4 +1,4 @@
-function mat = kernbyindex(i_in,j_in,chnkr,whts,kern,opdims,spmat,op_perms)
+function mat = kernbyindex(i,j,chnkr,whts,kern,opdims,spmat,l2scale)
 %% evaluate system matrix by entry index utility function for 
 % general kernels, with replacement for specific entries and the
 % ability to add a low-rank modification.
@@ -28,6 +28,7 @@ function mat = kernbyindex(i_in,j_in,chnkr,whts,kern,opdims,spmat,op_perms)
 %    non-zero (non-empty) entry in the matlab built-in sparse 
 %    (chnkr.sparse) matrix spmat is overwritten
 % see also 
+% l2scale = false
 
 % find unique underlying points
 
@@ -61,19 +62,12 @@ jpts = idivide(int64(j(:)-1),int64(opdims(2)))+1;
 
 ri = chnkr.r(:,iuni); rj = chnkr.r(:,juni);
 di = chnkr.d(:,iuni); dj = chnkr.d(:,juni);
+nj = chnkr.n(:,juni); ni = chnkr.n(:,iuni);
 d2i = chnkr.d(:,iuni); d2j = chnkr.d2(:,juni);
-ni = chnkr.n(:,iuni); nj = chnkr.n(:,juni);
-if(chnkr.hasdata)
-    dd = chnkr.data(:,iuni);
-    ddj = chnkr.data(:,juni);
-end
-srcinfo = []; srcinfo.r = rj; srcinfo.d = dj; srcinfo.d2 = d2j; srcinfo.n = nj;
+srcinfo = []; srcinfo.r = rj; srcinfo.d = dj; srcinfo.d2 = d2j;
+srcinfo.n = nj;
 targinfo = []; targinfo.r = ri; targinfo.d = di; targinfo.d2 = d2i;
-targinfo.n = ni; 
-if(chnkr.hasdata)
-    targinfo.data = dd; 
-    srcinfo.data = ddj;
-end
+targinfo.n = ni;
 %di = bsxfun(@rdivide,di,sqrt(sum(di.^2,1)));
 %dj = bsxfun(@rdivide,dj,sqrt(sum(dj.^2,1)));
 
@@ -86,12 +80,15 @@ ijuni2 = (ijuni-1)*opdims(2) + mod(j(:)-1,opdims(2))+1;
 
 mat = matuni(iiuni2,ijuni2);
 
+whts = whts(:);
+
 % scale columns by weights
 
-wj = whts(jpts(:));
-%size(wj)
-mat = bsxfun(@times,mat,wj.');
-
+if l2scale
+    mat = sqrt(whts(ipts(:))) .* mat .* sqrt(whts(jpts(:)).');
+else
+    mat = mat .* whts(jpts(:)).';
+end
 % overwrite any entries given as nonzeros in sparse matrix
 
 if nargin > 6

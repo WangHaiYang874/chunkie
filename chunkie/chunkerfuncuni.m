@@ -114,6 +114,7 @@ end
 chnkr.adj = adjs(:,1:nch);
 
 % added by Shidong Jiang
+% Set normals
 chnkr.n = normals(chnkr);
 
 end

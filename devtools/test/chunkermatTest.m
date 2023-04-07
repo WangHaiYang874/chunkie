@@ -10,10 +10,10 @@ rng(iseed);
 addpaths_loc();
 
 cparams = [];
-cparams.eps = 1.0e-10;
+cparams.eps = 1.0e-6;
 cparams.nover = 1;
 pref = []; 
-pref.k = 30;
+pref.k = 36;
 narms = 3;
 amp = 0.25;
 start = tic; chnkr = chunkerfunc(@(t) starfish(t,narms,amp),cparams,pref); 
@@ -95,8 +95,8 @@ fprintf('difference between direct and iterative %5.2e\n',err)
 % evaluate at targets and compare
 
 opts.usesmooth=false;
-opts.verb=false;
-opts.quadkgparams = {'RelTol',1e-16,'AbsTol',1.0e-16};
+opts.verb=false; 
+opts.flam=true;
 start=tic; Dsol = chunkerkerneval(chnkr,fkern,sol2,targets,opts); 
 t1 = toc(start);
 fprintf('%5.2e s : time to eval at targs (slow, adaptive routine)\n',t1)
