@@ -1,4 +1,5 @@
 function [rint,maxrec,numint,ier] = adapgauss(fun,a,b,t,w)
+% adaptive Gauss quadrature
 
 k = 16;
 eps = 1e-12;
@@ -89,4 +90,3 @@ tt = u*t+v;
 ftt = fun(tt);
 val = sum(ftt.*w)*u;
 end
-
