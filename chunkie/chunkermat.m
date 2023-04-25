@@ -258,7 +258,8 @@ for i=1:nchunkers
         else
             k = chnkr.k;
             auxquads = chnk.quadggq.setuplogquad(k,opdims);
-            opts.auxquads.ggqlog = auxquads;
+%             opts.auxquads.ggqlog = auxquads;
+%             this will cause bugs for different opdims in chunkgraph. 
         end    
         type = 'log';
         if nonsmoothonly
