@@ -1,5 +1,5 @@
 
-function [Kpxy,nbr] = proxyfun(slf,nbr,l,ctr,chnkr,whts,kern,opdims, ...
+function [Kpxy,nbr] = proxyfun(slf,nbr,l,ctr,chnkr,whts,kerns,opdims, ...
     pr,ptau,pw,pin,ifaddtrans,l2scale)
 %PROXYFUN proxy function utility for kernels defined on chunkers
 %
@@ -58,29 +58,78 @@ srcinfo.n = chnkr.n(:,slfuni);
 targinfo = []; targinfo.r = pxy; targinfo.d = ptau; 
 targinfo.d2 = []; targinfo.n = chnk.perp(ptau);
 
-Kpxy = kern(srcinfo,targinfo);
-
-Kpxy = Kpxy(:,islfuni2);
-
 whts = whts(:);
 
-if l2scale
-Kpxy = sqrt(pw2(:)).*Kpxy.*sqrt(whts(slfpts).');
-else
-Kpxy = Kpxy.*whts(slfpts).';
-end
+if length(kerns)==1
 
-
-if ifaddtrans
-    Kpxy2 = kern(targinfo,srcinfo);
-    Kpxy2 = Kpxy2(islfuni2,:);
-    if l2scale
-    Kpxy2 = sqrt(whts(slfpts)).*Kpxy2.*sqrt(pw2(:).');
-    else    
-    Kpxy2 = Kpxy2.*pw2(:).';
+    Kpxy = kerns(srcinfo,targinfo);
+    submat_norms1 = zeros(opdims(1),opdims(2));
+    n = size(srcinfo.r,2);
+    m = size(targinfo.r,2);
+    for i = 1:opdims(1)
+        for j=1:opdims(2)
+            submat_norms1(i,j) = norm(Kpxy(i:opdims(1):end,j:opdims(2):end),'fro');
+        end
     end
+    Kpxy = Kpxy(:,islfuni2);
+
+    if l2scale
+    Kpxy = sqrt(pw2(:)).*Kpxy.*sqrt(whts(slfpts).');
+    else
+    Kpxy = Kpxy.*whts(slfpts).';
+    end
+
+    if ifaddtrans
+        Kpxy2 = kerns(targinfo,srcinfo);
+        Kpxy2 = Kpxy2(islfuni2,:);
+        if l2scale
+        Kpxy2 = sqrt(whts(slfpts)).*Kpxy2.*sqrt(pw2(:).');
+        else    
+        Kpxy2 = Kpxy2.*pw2(:).';
+        end
+        
+        submat_norms2 = zeros(opdims(1),opdims(2));
+        for i = 1:opdims(1)
+            for j=1:opdims(2)
+                submat_norms2(i,j) = norm(Kpxy2(i:opdims(1):end,j:opdims(2):end),'fro');
+            end
+        end
+        % submat_norms1
+        % submat_norms2
+
+        Kpxy = [Kpxy; Kpxy2.'];
+    end
+
+    
+
+else
+    % multiple kernels
+    Kpxy = cell(length(kerns),1);
+    Kpxy2 = cell(length(kerns),1);
+    for i = 1:length(kerns)
+        Kpxy{i} = kerns{i}(srcinfo,targinfo);
+        Kpxy{i} = Kpxy{i}(:,islfuni2);
+        if l2scale
+        Kpxy{i} = sqrt(pw2(:)).*Kpxy{i}.*sqrt(whts(slfpts).');
+        else
+        Kpxy{i} = Kpxy{i}.*whts(slfpts).';
+        end
+        
+        if ifaddtrans
+            Kpxy2{i} = kerns{i}(targinfo,srcinfo);
+            Kpxy2{i} = Kpxy2{i}(islfuni2,:);
+            if l2scale
+            Kpxy2{i} = sqrt(whts(slfpts)).*Kpxy2{i}.*sqrt(pw2(:).');
+            else
+            Kpxy2{i} = Kpxy2{i}.*pw2(:).';
+            end
+        end
+    end
+    Kpxy = cat(1, Kpxy{:});
+    Kpxy2 = cat(2,Kpxy2{:});
     Kpxy = [Kpxy; Kpxy2.'];
 end
+
 
 % points of geometry corresponding to nbr indices
 

@@ -21,17 +21,17 @@ r2 = rx2+ry2;
 
 r = sqrt(r2);
 
-[h0,h1] = chnk.helm2d.besselh01(k*r);
+% [h0,h1] = chnk.helm2d.besselh01(k*r);
 
 if nargout > 0
-    %h0 = besselh(0,1,k*r);
+    h0 = besselh(0,1,k*r);
     val = 0.25*1i*h0;
 end
 
 [m,n] = size(xs);
 
 if nargout > 1
-%     h1 = besselh(1,1,k*r);
+    h1 = besselh(1,1,k*r);
 %     
 %     grad = zeros(m,n,2);
 %     

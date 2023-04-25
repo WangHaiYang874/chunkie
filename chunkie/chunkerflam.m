@@ -42,6 +42,7 @@ function [F] = chunkerflam(chnkr,kern,dval,opts)
 %                               matvecs or embedded in a sparse matrix.
 %                               Not recommended unless you have a
 %                               compelling reason.
+%                               - 'srskelf', see the github repo strong-skel. 
 %           opts.useproxy = boolean (true), use a proxy function to speed
 %                           up the FLAM compression. It may be desirable to
 %                           turn this off if there appear to be precision
@@ -67,6 +68,7 @@ function [F] = chunkerflam(chnkr,kern,dval,opts)
 %           opts.verb = boolean (false), if true print out the process of
 %                   the compression of FLAM.
 %           opts.lvlmax = integer (inf), maximum level of compression
+%           opts.proxyKern = []
 %
 % Output:
 %   F - the requested FLAM compressed representation of the 
@@ -78,6 +80,8 @@ function [F] = chunkerflam(chnkr,kern,dval,opts)
 %
 
 F = [];
+
+% default options
 
 if length(chnkr) > 1
     chnkr = merge(chnkr);
@@ -97,7 +101,44 @@ useproxy = true;
 occ = 40;
 rank_or_tol = 1e-14;
 verb = false;
+l2scale = false;
 lvlmax = inf;
+pxykern = kern;
+
+% get opts from struct if available
+
+if isfield(opts,'quad')
+    quad = opts.quad;
+end
+if isfield(opts,'l2scale')
+    l2scale = opts.l2scale;
+end
+
+if isfield(opts,'occ')
+    occ = opts.occ;
+end
+if isfield(opts,'rank_or_tol')
+    rank_or_tol = opts.rank_or_tol;
+end
+if isfield(opts,'verb')
+    verb = opts.verb;
+end
+if isfield(opts,'lvlmax')
+    lvlmax = opts.lvlmax;
+end
+
+if isfield(opts,'proxyKern')
+    pxykern = opts.proxyKern;
+end
+
+if isfield(opts,'flamtype')
+    flamtype = opts.flamtype;
+end
+
+if isfield(opts,'useproxy')
+    useproxy = opts.useproxy;
+end
+
 
 if or(chnkr.nch < 1,chnkr.k < 1)
     warning('empty chunker, doing nothing')
@@ -132,34 +173,9 @@ if (length(dval) ~= opdims(1)*chnkr.npt)
     return
 end
 
-% get opts from struct if available
-
-if isfield(opts,'quad')
-    quad = opts.quad;
-end
-if isfield(opts,'l2scale')
-    l2scale = opts.l2scale;
-else
-    l2scale = false;
-end
-
-
-if isfield(opts,'occ')
-    occ = opts.occ;
-end
-if isfield(opts,'rank_or_tol')
-    rank_or_tol = opts.rank_or_tol;
-end
-if isfield(opts,'verb')
-    verb = opts.verb;
-end
-if isfield(opts,'lvlmax')
-    lvlmax = opts.lvlmax;
-end
-
 % check if chosen FLAM routine implemented before doing real work
 
-if ~ (strcmpi(flamtype,'rskelf') || strcmpi(flamtype,'rskel'))
+if ~ (strcmpi(flamtype,'rskelf') || strcmpi(flamtype,'rskel') || strcmpi(flamtype,'srskelf') )
     warning('selected flamtype %s not available, doing nothing',flamtype)
     return
 end
@@ -193,30 +209,42 @@ end
 width = max(max(chnkr)-min(chnkr));
 optsnpxy = []; optsnpxy.rank_or_tol = rank_or_tol;
 optsnpxy.nsrc = occ;
+pxyfun = [];
+pxyfunr = [];
 
-npxy = chnk.flam.nproxy_square(kern,width,optsnpxy);
-if l2scale
-    %% TODO: this is a hack, need to fix
-    npxy = 2*npxy;
+if useproxy
+    npxy = chnk.flam.nproxy_square(pxykern,width,optsnpxy);
+    [pr,ptau,pw,pin] = chnk.flam.proxy_square_pts(npxy);
 end
 
 matfun = @(i,j) chnk.flam.kernbyindex(i,j,chnkr,wts,kern,opdims,sp,l2scale);
-[pr,ptau,pw,pin] = chnk.flam.proxy_square_pts(npxy);
 
 if strcmpi(flamtype,'rskelf')
     ifaddtrans = true;
-    pxyfun = @(x,slf,nbr,l,ctr) chnk.flam.proxyfun(slf,nbr,l,ctr,chnkr,wts, ...
-        kern,opdims,pr,ptau,pw,pin,ifaddtrans,l2scale);
+    if useproxy
+        pxyfun = @(x,slf,nbr,l,ctr) chnk.flam.proxyfun(slf,nbr,l,ctr,chnkr,wts, ...
+            pxykern,opdims,pr,ptau,pw,pin,ifaddtrans,l2scale);
+    end
     F = rskelf(matfun,xflam,occ,rank_or_tol,pxyfun,struct('verb',verb,...
         'lvlmax',lvlmax));
 end
 
 if strcmpi(flamtype,'rskel') 
-    pxyfunr = @(rc,rx,cx,slf,nbr,l,ctr) chnk.flam.proxyfunr(rc,rx,slf,nbr,l, ...
+    if useproxy
+        pxyfunr = @(rc,rx,cx,slf,nbr,l,ctr) chnk.flam.proxyfunr(rc,rx,slf,nbr,l, ...
         ctr,chnkr,wts,kern,opdims,pr,ptau,pw,pin);
+    end
     F = rskel(matfun,xflam,xflam,occ,rank_or_tol,pxyfunr);
 end
-	 
 
+if strcmpi(flamtype,'srskelf')
+    if useproxy
+        ifaddtrans = true;
+        pxyfun = @(x,slf,nbr,l,ctr) chnk.flam.proxyfun(slf,nbr,l,ctr,chnkr,wts, ...
+        pxykern,opdims,pr,ptau,pw,pin,ifaddtrans,l2scale);
+    end
+
+    F = srskelf_asym(matfun,xflam,occ,rank_or_tol,pxyfun,struct('verb',1,'SYMM','N','lvlmax',lvlmax));
+end
 
 end
