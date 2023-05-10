@@ -1,13 +1,13 @@
-function [F] = chunkerflam(chnkr,kern,dval,opts)
+function [F] = chunkerflam(chnkobj,kern,dval,opts)
 %CHUNKERFLAM build the requested FLAM compressed representation 
 % (e.g. a recursive skeletonization factorization) of the system matrix 
 % for given kernel and chunker description of boundary. This routine
 % has the same quadrature options as CHUNKERMAT.
 %
-% Syntax: sysmat = chunkerflam(chnkr,kern,opts)
+% Syntax: sysmat = chunkerflam(chnkobj,kern,dval,opts)
 %
 % Input:
-%   chnkr - chunker object describing boundary
+%   chnkobj - chunker object or chunkgraph object describing boundary 
 %   kern  - kernel function. By default, this should be a function handle
 %           accepting input of the form kern(srcinfo,targinfo), where 
 %           srcinfo and targinfo are in the ptinfo struct format, i.e.
@@ -68,7 +68,10 @@ function [F] = chunkerflam(chnkr,kern,dval,opts)
 %           opts.verb = boolean (false), if true print out the process of
 %                   the compression of FLAM.
 %           opts.lvlmax = integer (inf), maximum level of compression
-%           opts.proxyKern = []
+%           opts.adaptive_correction = boolean (false), see chunkermat
+%           opts.isrcip = boolean (false), if true, use rcip to construct 
+%                   sparse matrix. 
+% 
 %
 % Output:
 %   F - the requested FLAM compressed representation of the 
@@ -81,12 +84,6 @@ function [F] = chunkerflam(chnkr,kern,dval,opts)
 
 F = [];
 
-% default options
-
-if length(chnkr) > 1
-    chnkr = merge(chnkr);
-end
-
 if nargin < 3
     dval = 0.0;
 end
@@ -95,81 +92,91 @@ if nargin < 4
     opts = [];
 end
 
-quad = 'ggqlog';
-flamtype = 'rskelf';
-useproxy = true;
-occ = 40;
-rank_or_tol = 1e-14;
-verb = false;
-l2scale = false;
-lvlmax = inf;
-pxykern = kern;
+quad = 'ggqlog';        if isfield(opts,'quad'),    quad = opts.quad;end
+l2scale = false;        if isfield(opts,'l2scale'), l2scale = opts.l2scale;end
+flamtype = 'rskelf';    if isfield(opts,'flamtype'),flamtype = opts.flamtype;end
+useproxy = true;        if isfield(opts,'useproxy'),useproxy = opts.useproxy;end
+occ = 200;              if isfield(opts,'occ'),     occ = opts.occ;end
+rank_or_tol = 1e-14;    if isfield(opts,'rank_or_tol'),rank_or_tol = opts.rank_or_tol;end
+verb = false;           if isfield(opts,'verb'),    verb = opts.verb;end
+lvlmax = inf;           if isfield(opts,'lvlmax'),  lvlmax = opts.lvlmax;end
+adaptive_correction = false; if isfield(opts,'adaptive_correction'), ...
+    adaptive_correction = opts.adaptive_correction;end
+isrcip = false;         if isfield(opts,'isrcip'),  isrcip = opts.isrcip;end
 
-% get opts from struct if available
+eps = rem(rank_or_tol,1);
 
-if isfield(opts,'quad')
-    quad = opts.quad;
-end
-if isfield(opts,'l2scale')
-    l2scale = opts.l2scale;
-end
 
-if isfield(opts,'occ')
-    occ = opts.occ;
-end
-if isfield(opts,'rank_or_tol')
-    rank_or_tol = opts.rank_or_tol;
-end
-if isfield(opts,'verb')
-    verb = opts.verb;
-end
-if isfield(opts,'lvlmax')
-    lvlmax = opts.lvlmax;
+% Flag for determining whether input object is a chunkergraph
+icgrph = 0;
+
+if (class(chnkobj) == "chunker")
+    chnkrs = chnkobj;
+elseif(class(chnkobj) == "chunkgraph")
+    icgrph = 1;
+    chnkrs = chnkobj.echnks;
+else
+    msg = "Unsupported object in chunkermat";
+    error(msg)
 end
 
-if isfield(opts,'proxyKern')
-    pxykern = opts.proxyKern;
+for chnkr = chnkrs
+    if or(chnkr.nch < 1,chnkr.k < 1)
+        warning('empty chunker, doing nothing')
+        return
+    end
 end
 
-if isfield(opts,'flamtype')
-    flamtype = opts.flamtype;
-end
+nchunkers = length(chnkrs);
+opdims_mat = zeros(2,nchunkers,nchunkers);
+lchunks    = zeros(nchunkers,1);
 
-if isfield(opts,'useproxy')
-    useproxy = opts.useproxy;
-end
+for i=1:nchunkers
+    
+    targinfo = [];
+   	targinfo.r = chnkrs(i).r(:,2); targinfo.d = chnkrs(i).d(:,2); 
+   	targinfo.d2 = chnkrs(i).d2(:,2); targinfo.n = chnkrs(i).n(:,2);
+    lchunks(i) = size(chnkrs(i).r(:,:),2);
+    
+    for j=1:nchunkers
+        
+        % determine operator dimensions using first two points
 
+        srcinfo = []; 
+        srcinfo.r = chnkrs(j).r(:,1); srcinfo.d = chnkrs(j).d(:,1); 
+        srcinfo.d2 = chnkrs(j).d2(:,1); srcinfo.n = chnkrs(j).n(:,1);
 
-if or(chnkr.nch < 1,chnkr.k < 1)
-    warning('empty chunker, doing nothing')
-    sp = [];
-    return
-end
+        if (size(kern) == 1)
+            ftemp = kern(srcinfo,targinfo);
+        else
+            ktmp = kern{i,j};
+            ftemp = ktmp(srcinfo,targinfo);
+        end   
+        opdims = size(ftemp);
+        opdims_mat(:,i,j) = opdims;
+    end
+end    
 
-% determine operator dimensions using first two points
+irowlocs = zeros(nchunkers+1,1);
+icollocs = zeros(nchunkers+1,1);
 
-srcinfo = []; targinfo = [];
-srcinfo.r = chnkr.r(:,1); srcinfo.d = chnkr.d(:,1); 
-srcinfo.d2 = chnkr.d2(:,1); srcinfo.n = chnkr.n(:,1);
-i2 = min(2,chnkr.npt);
-targinfo.r = chnkr.r(:,i2); targinfo.d = chnkr.d(:,i2); 
-targinfo.d2 = chnkr.d2(:,i2); targinfo.n = chnkr.n(:,i2);
+irowlocs(1) = 1;
+icollocs(1) = 1;
+for i=1:nchunkers
+   icollocs(i+1) = icollocs(i) + lchunks(i)*opdims_mat(2,1,i);
+   irowlocs(i+1) = irowlocs(i) + lchunks(i)*opdims_mat(1,i,1);
+end    
 
-if(chnkr.hasdata)
-    targinfo.data = chnkr.data(:,i2);
-end
+nrows = irowlocs(end)-1;
+ncols = icollocs(end)-1;
 
-ftemp = kern(srcinfo,targinfo);
-opdims = size(ftemp);
-assert(opdims(1) == opdims(2), 'the opdim should be a square matrix')
+assert(nrows==ncols,'chunkerflam: nrows and ncols must be equal');
 
 if (length(dval) == 1)
-    dval = dval*ones(opdims(1)*chnkr.npt,1);
-end
-
-if (length(dval) ~= opdims(1)*chnkr.npt)
+    dval = dval*ones(nrows,1);
+elseif (length(dval) ~= nrows)
     warning('provided dval array is length %d. must be scalar or length %d',...
-        length(dval),opdims(1)*chnkr.npt);
+        length(dval),nrows);
     return
 end
 
@@ -184,56 +191,88 @@ end
 
 if strcmpi(quad,'ggqlog') 
     chunkermatopt = struct('quad','ggq','type','log','nonsmoothonly',true, ...
-        'l2scale',l2scale);
+        'l2scale',l2scale,'adaptive_correction',adaptive_correction,'eps',eps,...
+        'isrcip',isrcip);
 elseif strcmpi(quad,'native')
     chunkermatopt = struct('quad','native','nonsmoothonly',true, ...
-        'l2scale',l2scale);
+        'l2scale',l2scale,'adaptive_correction',adaptive_correction,'eps',eps,...
+        'isrcip',isrcip);
 else
     warning('specified quadrature method not available');
     return;
 end
-sp = chunkermat(chnkr,kern,chunkermatopt);
-
-[m,n] = size(sp);
-sp = sp + spdiags(dval,0,m,n);
+sp = chunkermat(chnkrs,kern,chunkermatopt);
+sp = sp + spdiags(dval,0,nrows,nrows);
 
 % prep and call flam
 
-wts = weights(chnkr);
+wts = zeros(ncols,1);
+xflam = zeros(2,ncols);
 
-xflam = zeros(2,chnkr.npt*opdims(2));
-for i=1:opdims(2)
-    xflam(:,i:opdims(2):end) = chnkr.r(:,:);
+mmax = [-inf;-inf];
+mmin = [inf;inf];
+
+for i=1:nchunkers
+    chnkr = chnkrs(i);
+    opdim = opdims_mat(2,1,i);
+    wtsi = weights(chnkr); wtsi = wtsi(:);
+    xi = chnkr.r(:,:);
+    for j=1:opdim
+        wts(icollocs(i)+j-1:opdim:icollocs(i+1)-1) = wtsi;
+        xflam(:,icollocs(i)+j-1:opdim:icollocs(i+1)-1) = xi;
+    end
+
+    mmax = max([mmax,max(chnkr)],[],2);
+    mmin = min([mmin,min(chnkr)],[],2);
 end
 
-width = max(max(chnkr)-min(chnkr));
+width = max(mmax-mmin);
+
+matfun = @(i,j) chnk.flam.kernbyindex(i,j,chnkrs,wts,kern,opdims_mat,sp,l2scale);
+
+if ~useproxy
+    if strcmpi(flamtype,'rskelf')
+        F = rskelf(matfun,xflam,occ,rank_or_tol,[],struct('verb',verb,'lvlmax',lvlmax));
+    end
+    if strcmpi(flamtype,'rskel') 
+        F = rskel(matfun,xflam,xflam,occ,rank_or_tol,[]);
+    end    
+    return
+end
+
 optsnpxy = []; optsnpxy.rank_or_tol = rank_or_tol;
 optsnpxy.nsrc = occ;
 pxyfun = [];
 pxyfunr = [];
 
-if useproxy
-    npxy = chnk.flam.nproxy_square(pxykern,width,optsnpxy);
-    [pr,ptau,pw,pin] = chnk.flam.proxy_square_pts(npxy);
+npxy = chnk.flam.nproxy_square(kern,width,optsnpxy);
+
+if npxy == -1
+    warning('chunkerflam: proxy failed, defaulting to no proxy')
+    if strcmpi(flamtype,'rskelf')
+        F = rskelf(matfun,xflam,occ,rank_or_tol,[],struct('verb',verb,'lvlmax',lvlmax));
+    end
+    if strcmpi(flamtype,'rskel') 
+        F = rskel(matfun,xflam,xflam,occ,rank_or_tol,[]);
+    end    
+    return
 end
 
-matfun = @(i,j) chnk.flam.kernbyindex(i,j,chnkr,wts,kern,opdims,sp,l2scale);
+
+[pr,ptau,pw,pin] = chnk.flam.proxy_square_pts(npxy);
 
 if strcmpi(flamtype,'rskelf')
     ifaddtrans = true;
-    if useproxy
-        pxyfun = @(x,slf,nbr,l,ctr) chnk.flam.proxyfun(slf,nbr,l,ctr,chnkr,wts, ...
-            pxykern,opdims,pr,ptau,pw,pin,ifaddtrans,l2scale);
-    end
+    pxyfun = @(x,slf,nbr,l,ctr) chnk.flam.proxyfun(slf,nbr,l,ctr,chnkrs,wts, ...
+        kern,opdims_mat,pr,ptau,pw,pin,ifaddtrans,l2scale);
     F = rskelf(matfun,xflam,occ,rank_or_tol,pxyfun,struct('verb',verb,...
         'lvlmax',lvlmax));
 end
 
 if strcmpi(flamtype,'rskel') 
-    if useproxy
-        pxyfunr = @(rc,rx,cx,slf,nbr,l,ctr) chnk.flam.proxyfunr(rc,rx,slf,nbr,l, ...
+    warning('chunkerflam: proxyr has not adapted for the multiple chunker case yet')
+    pxyfunr = @(rc,rx,cx,slf,nbr,l,ctr) chnk.flam.proxyfunr(rc,rx,slf,nbr,l, ...
         ctr,chnkr,wts,kern,opdims,pr,ptau,pw,pin);
-    end
     F = rskel(matfun,xflam,xflam,occ,rank_or_tol,pxyfunr);
 end
 
